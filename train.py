@@ -38,7 +38,7 @@ def get_opt():
     parser.add_argument("--keep_step", type=int, default = 100000)
     parser.add_argument("--decay_step", type=int, default = 100000)
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
-    parser.add_argument("--use_wandb", action='store_true', help='use wandb to track training process')
+    parser.add_argument("--use_wandb",action='store_true', default = False, help='use wandb to track training process')
 
     opt = parser.parse_args()
     return opt
@@ -85,13 +85,15 @@ def train_gmm(opt, train_loader, model, wandb_run): # TODO wandb instrumentation
         ic(warped_cloth.shape)
         ic(warped_grid.shape)
         ic(im.shape)
+
+        exit(0) # REMOVE
         
         loss = criterionL1(warped_cloth, im_c)    
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
             
-        if (step+1) % opt.display_count == 0:
+        if (step+1) % opt.display_count == 0 and opt.use_wandb:
             # board_add_images(board, 'combine', visuals, step+1)
             wandb_add_images(wandb_run, 'combine', visuals)
 
@@ -151,16 +153,19 @@ def train_tom(opt, train_loader, model, wandb_run): # TODO wandb instrumentation
         loss.backward()
         optimizer.step()
             
-        if (step+1) % opt.display_count == 0:
-            board_add_images(board, 'combine', visuals, step+1)
-            board.add_scalar('metric', loss.item(), step+1)
-            board.add_scalar('L1', loss_l1.item(), step+1)
-            board.add_scalar('VGG', loss_vgg.item(), step+1)
-            board.add_scalar('MaskL1', loss_mask.item(), step+1)
+        if (step+1) % opt.display_count == 0 and opt.use_wandb:
+            wandb_add_images(wandb_run, 'combine', visuals)
+
+            wandb.log({
+                'metric': loss.item(),
+                'L1': loss_l1.item(),
+                'VGG': loss_vgg.item(),
+                'MaskL1': loss_mask.item()
+            })
+
             t = time.time() - iter_start_time
-            print('step: %8d, time: %.3f, loss: %.4f, l1: %.4f, vgg: %.4f, mask: %.4f' 
-                    % (step+1, t, loss.item(), loss_l1.item(), 
-                    loss_vgg.item(), loss_mask.item()), flush=True)
+            print(f'step: {step + 1}, time: {t:.3f}, loss: {loss.item():.4f}, l1: {loss_l1.item():.4f}, \
+                 vgg: {loss_vgg.item():.4f}, mask: {loss_mask.item():.4f}', flush=True)
 
         if (step+1) % opt.save_count == 0:
             save_checkpoint(model, os.path.join(opt.checkpoint_dir, opt.name, 'step_%06d.pth' % (step+1)))
@@ -177,9 +182,10 @@ def main():
     train_loader = CPDataLoader(opt, train_dataset)
 
     # visualization
-    if not os.path.exists(opt.tensorboard_dir):
-        os.makedirs(opt.tensorboard_dir)
-    run = wandb.init(project="CP-VTON", entity="retail-demo")
+    if opt.use_wandb:
+        run = wandb.init(project="CP-VTON", entity="retail-demo")
+    else:
+        run = None
    
     # create model & train & save the final checkpoint
     if opt.stage == 'GMM':

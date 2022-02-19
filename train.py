@@ -9,8 +9,10 @@ import time
 from cp_dataset import CPDataset, CPDataLoader
 from networks import GMM, UnetGenerator, VGGLoss, load_checkpoint, save_checkpoint
 
-from tensorboardX import SummaryWriter
-from visualization import board_add_image, board_add_images
+from visualization import wandb_add_images
+import wandb
+
+from icecream import ic
 
 
 def get_opt():
@@ -29,7 +31,6 @@ def get_opt():
     parser.add_argument("--radius", type=int, default = 5)
     parser.add_argument("--grid_size", type=int, default = 5)
     parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate for adam')
-    parser.add_argument('--tensorboard_dir', type=str, default='tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--checkpoint', type=str, default='', help='model checkpoint for initialization')
     parser.add_argument("--display_count", type=int, default = 20)
@@ -37,11 +38,12 @@ def get_opt():
     parser.add_argument("--keep_step", type=int, default = 100000)
     parser.add_argument("--decay_step", type=int, default = 100000)
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
+    parser.add_argument("--use_wandb", action='store_true', help='use wandb to track training process')
 
     opt = parser.parse_args()
     return opt
 
-def train_gmm(opt, train_loader, model, board):
+def train_gmm(opt, train_loader, model, wandb_run): # TODO wandb instrumentation
     model.cuda()
     model.train()
 
@@ -53,7 +55,7 @@ def train_gmm(opt, train_loader, model, board):
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda = lambda step: 1.0 -
             max(0, step - opt.keep_step) / float(opt.decay_step + 1))
     
-    for step in range(opt.keep_step + opt.decay_step):
+    for step in range(opt.keep_step + opt.decay_step): # keep_step + decay_step = epoch = 200000 (by default)
         iter_start_time = time.time()
         inputs = train_loader.next_batch()
             
@@ -75,6 +77,14 @@ def train_gmm(opt, train_loader, model, board):
         visuals = [ [im_h, shape, im_pose], 
                    [c, warped_cloth, im_c], 
                    [warped_grid, (warped_cloth+im)*0.5, im]]
+
+        ic(im_h.shape)
+        ic(shape.shape)
+        ic(im_pose.shape)
+        ic(c.shape)
+        ic(warped_cloth.shape)
+        ic(warped_grid.shape)
+        ic(im.shape)
         
         loss = criterionL1(warped_cloth, im_c)    
         optimizer.zero_grad()
@@ -82,16 +92,21 @@ def train_gmm(opt, train_loader, model, board):
         optimizer.step()
             
         if (step+1) % opt.display_count == 0:
-            board_add_images(board, 'combine', visuals, step+1)
-            board.add_scalar('metric', loss.item(), step+1)
+            # board_add_images(board, 'combine', visuals, step+1)
+            wandb_add_images(wandb_run, 'combine', visuals)
+
+            # board.add_scalar('metric', loss.item(), step+1)
+            wandb.log({
+                'metric': loss.item(),
+            })
             t = time.time() - iter_start_time
-            print('step: %8d, time: %.3f, loss: %4f' % (step+1, t, loss.item()), flush=True)
+            print(f'step: {step + 1}, time: {t:.3f}, loss: {loss.item():.4f}', flush=True)
 
         if (step+1) % opt.save_count == 0:
             save_checkpoint(model, os.path.join(opt.checkpoint_dir, opt.name, 'step_%06d.pth' % (step+1)))
 
 
-def train_tom(opt, train_loader, model, board):
+def train_tom(opt, train_loader, model, wandb_run): # TODO wandb instrumentation
     model.cuda()
     model.train()
     
@@ -150,8 +165,6 @@ def train_tom(opt, train_loader, model, board):
         if (step+1) % opt.save_count == 0:
             save_checkpoint(model, os.path.join(opt.checkpoint_dir, opt.name, 'step_%06d.pth' % (step+1)))
 
-
-
 def main():
     opt = get_opt()
     print(opt)
@@ -166,23 +179,23 @@ def main():
     # visualization
     if not os.path.exists(opt.tensorboard_dir):
         os.makedirs(opt.tensorboard_dir)
-    board = SummaryWriter(log_dir = os.path.join(opt.tensorboard_dir, opt.name))
+    run = wandb.init(project="CP-VTON", entity="retail-demo")
    
     # create model & train & save the final checkpoint
     if opt.stage == 'GMM':
         model = GMM(opt)
         if not opt.checkpoint =='' and os.path.exists(opt.checkpoint):
             load_checkpoint(model, opt.checkpoint)
-        train_gmm(opt, train_loader, model, board)
+        train_gmm(opt, train_loader, model, run)
         save_checkpoint(model, os.path.join(opt.checkpoint_dir, opt.name, 'gmm_final.pth'))
     elif opt.stage == 'TOM':
         model = UnetGenerator(25, 4, 6, ngf=64, norm_layer=nn.InstanceNorm2d)
         if not opt.checkpoint =='' and os.path.exists(opt.checkpoint):
             load_checkpoint(model, opt.checkpoint)
-        train_tom(opt, train_loader, model, board)
+        train_tom(opt, train_loader, model, run)
         save_checkpoint(model, os.path.join(opt.checkpoint_dir, opt.name, 'tom_final.pth'))
     else:
-        raise NotImplementedError('Model [%s] is not implemented' % opt.stage)
+        raise NotImplementedError(f'Model [{opt.stage}] is not implemented')
         
   
     print('Finished training %s, nameed: %s!' % (opt.stage, opt.name))

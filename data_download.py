@@ -5,7 +5,7 @@ import os
 import re
 import tarfile
 import shutil
-
+import logging
 
 def download(url, filename, cookies=None):
     with open(filename, 'wb') as f:
@@ -26,15 +26,15 @@ def download(url, filename, cookies=None):
                 sys.stdout.flush()
     sys.stdout.write('\n')
 
+# drive_request = requests.get(
+#     'https://drive.google.com/uc?export=download&confirm=CONFIRM&id=1MxCUvKxejnwWnoZ-KoCyMCXo3TLhRuTo')
 
-drive_request = requests.get(
-    'https://drive.google.com/uc?export=download&confirm=CONFIRM&id=1MxCUvKxejnwWnoZ-KoCyMCXo3TLhRuTo')
-confirm_page = drive_request.text
-confirmation_code = re.findall('confirm=(.{4})', confirm_page)[0]
+# confirm_page = drive_request.text
+# confirmation_code = re.findall('confirm=(.{4})', confirm_page)[0]
 
-print('[*] Downloading data...')
-download('https://drive.google.com/uc?export=download&confirm=CONFIRM&id=1MxCUvKxejnwWnoZ-KoCyMCXo3TLhRuTo'.replace(
-    'CONFIRM', confirmation_code), 'data/viton_resize.tar.gz', cookies=drive_request.cookies)
+# print('[*] Downloading data...')
+# download('https://drive.google.com/uc?export=download&confirm=CONFIRM&id=1MxCUvKxejnwWnoZ-KoCyMCXo3TLhRuTo'.replace(
+#     'CONFIRM', confirmation_code), 'data/viton_resize.tar.gz', cookies=drive_request.cookies)
 
 tarfile.open("data/viton_resize.tar.gz").extractall(path='data/')
 

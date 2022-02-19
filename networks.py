@@ -401,7 +401,8 @@ class VGGLoss(nn.Module):
         return loss
 
 class GMM(nn.Module):
-    """ Geometric Matching Module
+    """
+    Geometric Matching Module
     """
     def __init__(self, opt):
         super(GMM, self).__init__()
